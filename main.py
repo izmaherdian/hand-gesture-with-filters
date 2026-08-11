@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Abaikan folder lokal './mediapipe' agar Python menggunakan pustaka site-packages resmi
+sys.path = [p for p in sys.path if os.path.abspath(p or '.') != os.path.abspath('.')]
+
 import cv2
 import mediapipe as mp
 import math
