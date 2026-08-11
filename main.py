@@ -15,11 +15,20 @@ def main():
     mp_drawing = mp.solutions.drawing_utils
     mp_drawing_styles = mp.solutions.drawing_styles
 
-    # Buka webcam (ID 0)
-    cap = cv2.VideoCapture(0)
+    # Ambil index kamera dari argumen terminal jika ada, misal: python main.py 1 (1 untuk kamera USB)
+    cam_index = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 0
+
+    print(f"Mencoba membuka kamera index: {cam_index}...")
+    cap = cv2.VideoCapture(cam_index)
+
+    # Fallback ke kamera default (0) jika kamera USB yang diminta tidak dapat dibuka
+    if not cap.isOpened() and cam_index != 0:
+        print(f"Kamera index {cam_index} tidak dapat dibuka, mengalihkan ke kamera default (0)...")
+        cam_index = 0
+        cap = cv2.VideoCapture(0)
 
     if not cap.isOpened():
-        print("Error: Tidak dapat mengakses kamera/webcam.")
+        print("Error: Tidak dapat mengakses kamera/webcam apapun.")
         return
 
     # Set resolusi kamera ke 1280x720 untuk tampilan yang lebih jernih
