@@ -422,6 +422,36 @@ def main():
                                 sy = int(p1[1]*a + p2[1]*(1-a)) + np.random.randint(-8, 8)
                                 cv2.circle(img, (sx, sy), np.random.randint(1, 3), (255, 100, 255), -1)
 
+                    # ── 3D VOLUMETRIC PRISM CONNECTORS & CHROMATIC OVERLAP ──
+                    # 1. 3D Wireframe Depth Lines connecting Portal 1 to Portal 2
+                    for i in range(4):
+                        pt1 = tuple(poly_pts_1[i])
+                        pt2 = tuple(poly_pts_2[i])
+                        cv2.line(img, pt1, pt2, (255, 220, 100), 1, cv2.LINE_AA)
+
+                    # 2. Check Overlap Region & Apply 3D RGB-Shift Hologram
+                    full_mask_1 = np.zeros((h, w), dtype=np.uint8)
+                    full_mask_2 = np.zeros((h, w), dtype=np.uint8)
+                    cv2.fillPoly(full_mask_1, [poly_pts_1], 255)
+                    cv2.fillPoly(full_mask_2, [poly_pts_2], 255)
+
+                    overlap_mask = cv2.bitwise_and(full_mask_1, full_mask_2)
+                    if np.any(overlap_mask > 0):
+                        # 3D Chromatic Aberration (RGB Shift 6px)
+                        shift = 6
+                        overlap_bgr = img.copy()
+                        b, g, r = cv2.split(overlap_bgr)
+                        r_shifted = np.roll(r, shift, axis=1)
+                        b_shifted = np.roll(b, -shift, axis=1)
+                        holo_3d = cv2.merge([b_shifted, g, r_shifted])
+
+                        overlap_3ch = cv2.cvtColor(overlap_mask, cv2.COLOR_GRAY2BGR)
+                        img = np.where(overlap_3ch == 255, holo_3d, img)
+
+                        # Glowing 3D Contour border around overlap area
+                        contours, _ = cv2.findContours(overlap_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                        cv2.drawContours(img, contours, -1, (0, 240, 255), 2, cv2.LINE_AA)
+
                 # ── MODE 3: Mini Portal (1 Hand) ──
                 elif len(results.multi_hand_landmarks) == 1 and not full_frame_mode:
                     smoothed_pts_1, smoothed_pts_2 = None, None
