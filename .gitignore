@@ -1,9 +1,31 @@
-bazel-*
-mediapipe/MediaPipe.xcodeproj
-mediapipe/MediaPipe.tulsiproj/*.tulsiconf-user
-mediapipe/provisioning_profile.mobileprovision
-node_modules/
-.configure.bazelrc
-.user.bazelrc
-
+# Virtual Environment
 .venv/
+env/
+venv/
+
+# Python Cache & Byte-compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE & Editor settings
+.vscode/
+.idea/
+*.swp
+*~
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# MediaPipe models & tasks
+*.task
+*.tflite
+
+# Logs & Temporary files
+*.log
+scratch/
