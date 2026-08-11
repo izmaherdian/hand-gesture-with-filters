@@ -1,7 +1,3 @@
-absl-py~=2.3
-certifi
+mediapipe==0.10.14
+opencv-python
 numpy
-sounddevice~=0.5
-flatbuffers~=25.9
-opencv-contrib-python
-matplotlib

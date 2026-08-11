@@ -1,9 +1,4 @@
 import sys
-import os
-
-# Prevent local './mediapipe' folder from shadowing the installed package
-sys.path = [p for p in sys.path if os.path.abspath(p or '.') != os.path.abspath('.')]
-
 import cv2
 import mediapipe as mp
 import time
