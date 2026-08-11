@@ -31,11 +31,11 @@ def main():
         print("Error: Tidak dapat mengakses kamera/webcam apapun.")
         return
 
-    # Set format MJPEG untuk performa FPS tinggi (30/60 FPS) pada kamera USB 1080p
+    # Set format MJPEG & Target 30 FPS pada kamera USB Full HD 1080p
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-    # Set resolusi kamera ke Full HD 1920x1080
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+    cap.set(cv2.CAP_PROP_FPS, 30)
 
     prev_time = 0
 
