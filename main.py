@@ -261,7 +261,8 @@ def main():
     gesture_triggered = False
     full_frame_mode = False
     fps_display = 30.0
-    smoothed_pts = None
+    smoothed_pts_1 = None
+    smoothed_pts_2 = None
 
     # Smoothed FPS using exponential moving average
     fps_alpha = 0.15
@@ -324,112 +325,127 @@ def main():
                 else:
                     gesture_triggered = False
 
-                # ── Collect hand landmarks with Hand-based Deterministic Mapping ──
-                hand_points_dict = {}  # 'left': [thumb, index], 'right': [thumb, index]
-                
-                # Sort hands left-to-right by wrist X coordinate if 2 hands detected
+                # ── Collect hand landmarks & fingertips ──
                 sorted_hands = results.multi_hand_landmarks
                 if len(results.multi_hand_landmarks) == 2:
                     sorted_hands = sorted(results.multi_hand_landmarks, key=lambda h_lm: h_lm.landmark[0].x)
                 
-                for idx, hand_lms in enumerate(sorted_hands):
+                for hand_lms in sorted_hands:
                     mp_draw.draw_landmarks(
                         img, hand_lms, mp_hands.HAND_CONNECTIONS,
                         mp_styles.get_default_hand_landmarks_style(),
                         mp_styles.get_default_hand_connections_style()
                     )
 
-                    t_pt = [int(hand_lms.landmark[4].x * w), int(hand_lms.landmark[4].y * h)]
-                    i_pt = [int(hand_lms.landmark[8].x * w), int(hand_lms.landmark[8].y * h)]
-                    pts_portal.extend([t_pt, i_pt])
-
-                    # Small, clean finger dots
-                    for cx, cy in [t_pt, i_pt]:
-                        cv2.circle(img, (cx, cy), 8, C_FINGER, 2, cv2.LINE_AA)
+                    # Fingertips: 4 (Thumb), 8 (Index), 12 (Middle), 16 (Ring)
+                    for id_lm in [4, 8, 12, 16]:
+                        cx = int(hand_lms.landmark[id_lm].x * w)
+                        cy = int(hand_lms.landmark[id_lm].y * h)
+                        dot_col = C_FINGER if id_lm in [4, 8] else (255, 120, 200)
+                        cv2.circle(img, (cx, cy), 7, dot_col, 2, cv2.LINE_AA)
                         cv2.circle(img, (cx, cy), 3, C_WHITE, -1, cv2.LINE_AA)
 
-                # ── MODE: Full Frame ──
+                # ── MODE 1: Full Frame ──
                 if full_frame_mode:
                     img = apply_filter(img, filter_name, 0, 0, None, frame_galaxy)
 
-                # ── MODE: 4-Point Flexible Foldable Portal (2 hands) ──
+                # ── MODE 2: DUAL MULTI-PORTAL (2 Hands Detected) ──
                 elif len(sorted_hands) == 2:
-                    # Deterministic Loop: Left Thumb -> Left Index -> Right Index -> Right Thumb
                     h_left, h_right = sorted_hands[0], sorted_hands[1]
-                    raw_pts = np.array([
-                        [int(h_left.landmark[4].x * w), int(h_left.landmark[4].y * h)],   # Left Thumb
-                        [int(h_left.landmark[8].x * w), int(h_left.landmark[8].y * h)],   # Left Index
-                        [int(h_right.landmark[8].x * w), int(h_right.landmark[8].y * h)], # Right Index
-                        [int(h_right.landmark[4].x * w), int(h_right.landmark[4].y * h)]  # Right Thumb
+
+                    # ── PORTAL 1 (Primary): Thumb (4) & Index (8) ──
+                    raw_pts_1 = np.array([
+                        [int(h_left.landmark[4].x * w), int(h_left.landmark[4].y * h)],
+                        [int(h_left.landmark[8].x * w), int(h_left.landmark[8].y * h)],
+                        [int(h_right.landmark[8].x * w), int(h_right.landmark[8].y * h)],
+                        [int(h_right.landmark[4].x * w), int(h_right.landmark[4].y * h)]
                     ], dtype=np.float32)
 
-                    # Exponential Moving Average (EMA) Vertex Smoothing (Smooth 0.35)
-                    if smoothed_pts is None:
-                        smoothed_pts = raw_pts.copy()
+                    if smoothed_pts_1 is None:
+                        smoothed_pts_1 = raw_pts_1.copy()
                     else:
-                        smoothed_pts = 0.35 * raw_pts + 0.65 * smoothed_pts
+                        smoothed_pts_1 = 0.35 * raw_pts_1 + 0.65 * smoothed_pts_1
 
-                    poly_pts = smoothed_pts.astype(np.int32)
-
-                    x, y, bw, bh = cv2.boundingRect(poly_pts)
+                    poly_pts_1 = smoothed_pts_1.astype(np.int32)
+                    x, y, bw, bh = cv2.boundingRect(poly_pts_1)
                     x, y = max(0, x), max(0, y)
                     bw, bh = min(w - x, bw), min(h - y, bh)
 
                     if bw > 0 and bh > 0:
                         roi = img[y:y+bh, x:x+bw].copy()
-                        filtered_roi = apply_filter(roi, filter_name, x, y,
-                                                    None, frame_galaxy)
-
+                        filtered_roi = apply_filter(roi, filter_name, x, y, None, frame_galaxy)
                         mask = np.zeros((bh, bw), dtype=np.uint8)
-                        cv2.fillPoly(mask, [poly_pts - [x, y]], 255)
+                        cv2.fillPoly(mask, [poly_pts_1 - [x, y]], 255)
                         mask3 = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-
-                        img[y:y+bh, x:x+bw] = np.where(mask3 == 255,
-                                                         filtered_roi, roi)
-
-                        # Clean thin portal border (follows exact folded loop)
-                        cv2.polylines(img, [poly_pts], True, C_PORTAL_B, 2,
-                                      cv2.LINE_AA)
-
-                        # Subtle sparkles along edges
+                        img[y:y+bh, x:x+bw] = np.where(mask3 == 255, filtered_roi, roi)
+                        cv2.polylines(img, [poly_pts_1], True, C_PORTAL_B, 2, cv2.LINE_AA)
                         for i in range(4):
-                            p1 = poly_pts[i]
-                            p2 = poly_pts[(i + 1) % 4]
+                            p1, p2 = poly_pts_1[i], poly_pts_1[(i + 1) % 4]
                             for _ in range(3):
                                 a = np.random.random()
                                 sx = int(p1[0]*a + p2[0]*(1-a)) + np.random.randint(-8, 8)
                                 sy = int(p1[1]*a + p2[1]*(1-a)) + np.random.randint(-8, 8)
-                                cv2.circle(img, (sx, sy), np.random.randint(1, 3),
-                                           C_PORTAL_A, -1)
+                                cv2.circle(img, (sx, sy), np.random.randint(1, 3), C_PORTAL_A, -1)
 
-                # ── MODE: Mini Portal (1 hand) ──
-                elif len(pts_portal) == 2 and not full_frame_mode:
-                    smoothed_pts = None
-                    mx = (pts_portal[0][0] + pts_portal[1][0]) // 2
-                    my = (pts_portal[0][1] + pts_portal[1][1]) // 2
+                    # ── PORTAL 2 (Secondary): Middle (12) & Ring (16) ──
+                    filter_name_2 = FILTERS[(current_filter + 1) % len(FILTERS)]
+                    raw_pts_2 = np.array([
+                        [int(h_left.landmark[12].x * w), int(h_left.landmark[12].y * h)],
+                        [int(h_left.landmark[16].x * w), int(h_left.landmark[16].y * h)],
+                        [int(h_right.landmark[16].x * w), int(h_right.landmark[16].y * h)],
+                        [int(h_right.landmark[12].x * w), int(h_right.landmark[12].y * h)]
+                    ], dtype=np.float32)
+
+                    if smoothed_pts_2 is None:
+                        smoothed_pts_2 = raw_pts_2.copy()
+                    else:
+                        smoothed_pts_2 = 0.35 * raw_pts_2 + 0.65 * smoothed_pts_2
+
+                    poly_pts_2 = smoothed_pts_2.astype(np.int32)
+                    x, y, bw, bh = cv2.boundingRect(poly_pts_2)
+                    x, y = max(0, x), max(0, y)
+                    bw, bh = min(w - x, bw), min(h - y, bh)
+
+                    if bw > 0 and bh > 0:
+                        roi = img[y:y+bh, x:x+bw].copy()
+                        filtered_roi_2 = apply_filter(roi, filter_name_2, x, y, None, frame_galaxy)
+                        mask = np.zeros((bh, bw), dtype=np.uint8)
+                        cv2.fillPoly(mask, [poly_pts_2 - [x, y]], 255)
+                        mask3 = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+                        img[y:y+bh, x:x+bw] = np.where(mask3 == 255, filtered_roi_2, roi)
+                        cv2.polylines(img, [poly_pts_2], True, (255, 0, 200), 2, cv2.LINE_AA)
+                        for i in range(4):
+                            p1, p2 = poly_pts_2[i], poly_pts_2[(i + 1) % 4]
+                            for _ in range(3):
+                                a = np.random.random()
+                                sx = int(p1[0]*a + p2[0]*(1-a)) + np.random.randint(-8, 8)
+                                sy = int(p1[1]*a + p2[1]*(1-a)) + np.random.randint(-8, 8)
+                                cv2.circle(img, (sx, sy), np.random.randint(1, 3), (255, 100, 255), -1)
+
+                # ── MODE 3: Mini Portal (1 Hand) ──
+                elif len(results.multi_hand_landmarks) == 1 and not full_frame_mode:
+                    smoothed_pts_1, smoothed_pts_2 = None, None
+                    hand_lm = results.multi_hand_landmarks[0]
+                    cx = (int(hand_lm.landmark[4].x * w) + int(hand_lm.landmark[8].x * w)) // 2
+                    cy = (int(hand_lm.landmark[4].y * h) + int(hand_lm.landmark[8].y * h)) // 2
                     radius = int(math.hypot(
-                        pts_portal[0][0] - pts_portal[1][0],
-                        pts_portal[0][1] - pts_portal[1][1])) // 2 + 30
+                        int(hand_lm.landmark[4].x * w) - int(hand_lm.landmark[8].x * w),
+                        int(hand_lm.landmark[4].y * h) - int(hand_lm.landmark[8].y * h))) // 2 + 30
 
-                    x1, y1 = max(0, mx - radius), max(0, my - radius)
-                    x2, y2 = min(w, mx + radius), min(h, my + radius)
+                    x1, y1 = max(0, cx - radius), max(0, cy - radius)
+                    x2, y2 = min(w, cx + radius), min(h, cy + radius)
                     bw, bh = x2 - x1, y2 - y1
 
                     if bw > 0 and bh > 0:
                         roi = img[y1:y2, x1:x2].copy()
-                        filtered_roi = apply_filter(roi, filter_name, x1, y1,
-                                                    None, frame_galaxy)
-
+                        filtered_roi = apply_filter(roi, filter_name, x1, y1, None, frame_galaxy)
                         mask = np.zeros((bh, bw), dtype=np.uint8)
-                        cv2.circle(mask, (mx - x1, my - y1), radius, 255, -1)
+                        cv2.circle(mask, (cx - x1, cy - y1), radius, 255, -1)
                         mask3 = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-
-                        img[y1:y2, x1:x2] = np.where(mask3 == 255,
-                                                       filtered_roi, roi)
-                        cv2.circle(img, (mx, my), radius, C_PORTAL_B, 2,
-                                   cv2.LINE_AA)
+                        img[y1:y2, x1:x2] = np.where(mask3 == 255, filtered_roi, roi)
+                        cv2.circle(img, (cx, cy), radius, C_PORTAL_B, 2, cv2.LINE_AA)
                 else:
-                    smoothed_pts = None
+                    smoothed_pts_1, smoothed_pts_2 = None, None
 
             elif full_frame_mode:
                 img = apply_filter(img, filter_name, 0, 0, None, frame_galaxy)
