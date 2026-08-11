@@ -1,16 +1,17 @@
 # 🖐️ Hand Gesture Portal Filters (RETROLENS)
 
-A real-time Computer Vision application built with **OpenCV** and **Google MediaPipe** that creates dynamic camera filter portals using hand tracking gestures.
+A real-time Computer Vision application built with **OpenCV** and **Google MediaPipe** that creates dynamic, foldable 3D camera filter portals using real-time hand tracking.
 
 ---
 
-## 🌟 Features
+## 🌟 Key Features
 
 - **11 Retro Filters**: `MONO`, `DUAL-TONE`, `PIXELATE`, `INVERT`, `SEPIA`, `BLUR`, `THERMAL`, `SKETCH`, `GLITCH`, `NEON`, `GALAXY`
-- **4-Point Hand Portal**: Form a 4-point polygon using two hands (thumb and index fingertips) to cast filter portals in mid-air.
-- **Gesture Controls**: Touch thumb to pinky or touch two index fingertips (< 45px) to switch filters seamlessly.
-- **Minimalist HD Overlay**: Clean Instagram-style carousel pills at the bottom, locked 30 FPS display, unobtrusive corner HUD.
-- **1080p @ 30 FPS Optimized**: Configured for Full HD wide-angle webcams with smooth MJPG streaming.
+- **Foldable 4-Point Portal**: Form mid-air portals using your hands (Thumb & Index) with deterministic hand mapping and smooth EMA vertex interpolation.
+- **Dual-Portal Layering**: Form 2 independent filter portals simultaneously (Portal 1: Thumb+Index, Portal 2: Index+Middle).
+- **3D Volumetric & Chromatic Effect**: Overlapping portals form a 3D wireframe prism with 3D RGB-shift (Chromatic Aberration) holographic blending.
+- **Gesture Control**: Touch thumb to pinky or touch index fingertips to switch filters instantly.
+- **Clean Instagram-Style UI**: Minimalist bottom filter carousel, sharp HD text, locked 30 FPS playback.
 
 ---
 
@@ -34,16 +35,12 @@ python main.py 1
 
 ---
 
-## ⌨️ Keyboard Shortcuts
+## ⌨️ Controls
 
-| Key | Action |
+| Key / Gesture | Action |
 | --- | --- |
-| `TAB` / `SPACE` | Switch to next filter |
-| `F` | Toggle between Portal mode & Full Frame mode |
-| `0` - `9` | Directly select a filter |
-| `Q` / `ESC` | Exit application |
-
----
-
-## 📄 License
-MIT License
+| `Pinch` (Thumb + Pinky / 2 Index) | Switch filter |
+| `TAB` / `SPACE` | Next filter |
+| `F` | Toggle Portal / Full-Frame mode |
+| `0` - `9` | Select filter directly |
+| `Q` / `ESC` | Quit |
