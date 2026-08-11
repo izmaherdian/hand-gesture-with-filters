@@ -37,6 +37,11 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
     cap.set(cv2.CAP_PROP_FPS, 30)
 
+    # Buat window tampilan yang dapat di-resize agar pas di layar laptop (tidak melebihi layar)
+    window_name = "Hand Gesture Filter - Level 1 Demo"
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(window_name, 1280, 720) # Ukuran tampilan di layar laptop yang ideal
+
     prev_time = 0
 
     print("\n========================================================")
@@ -136,7 +141,7 @@ def main():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2, cv2.LINE_AA)
 
             # Tampilkan window kamera
-            cv2.imshow("Hand Gesture Filter - Level 1 Demo", image)
+            cv2.imshow(window_name, image)
 
             # Tekan 'q' atau ESC untuk keluar
             key = cv2.waitKey(1) & 0xFF
