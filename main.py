@@ -6,46 +6,125 @@ sys.path = [p for p in sys.path if os.path.abspath(p or '.') != os.path.abspath(
 
 import cv2
 import mediapipe as mp
-import numpy as np
-import math
 import time
+import math
+import numpy as np
 
-def count_fingers(landmarks, hand_label="Right"):
-    """Menghitung jumlah jari yang sedang terbuka (0 - 5)"""
-    fingers = []
+# Daftar 11 Filter Retrolens
+FILTERS = [
+    "MONO", 
+    "DUAL-TONE", 
+    "PIXELATE", 
+    "INVERT", 
+    "SEPIA", 
+    "BLUR", 
+    "THERMAL", 
+    "SKETCH", 
+    "GLITCH", 
+    "NEON", 
+    "GALAXY"
+]
 
-    # Jempol (Thumb) - ID 4 vs ID 3 (x-axis tergantung tangan kiri/kanan)
-    if hand_label == "Right":
-        fingers.append(1 if landmarks[4].x < landmarks[3].x else 0)
-    else:
-        fingers.append(1 if landmarks[4].x > landmarks[3].x else 0)
+def generate_galaxy_background(height=1080, width=1920):
+    """Menghasilkan background Galaxy / Space Starfield secara prosedural"""
+    galaxy_bg = np.zeros((height, width, 3), dtype=np.uint8)
+    galaxy_bg[:] = (30, 10, 40) # Space purple base
 
-    # 4 Jari Lainnya (Telunjuk ID 8, Tengah ID 12, Manis ID 16, Kelingking ID 20)
-    tip_ids = [8, 12, 16, 20]
-    for tip_id in tip_ids:
-        # Dibandingkan dengan persendian di bawahnya (tip_id - 2)
-        fingers.append(1 if landmarks[tip_id].y < landmarks[tip_id - 2].y else 0)
+    # Bintang-bintang kecil (Bintik putih)
+    for _ in range(800):
+        sx = np.random.randint(0, width)
+        sy = np.random.randint(0, height)
+        galaxy_bg[sy, sx] = (255, 255, 255)
 
-    return sum(fingers), fingers
+    # Bintang-bintang bercahaya lebih besar (Warna-warni neon)
+    for _ in range(100):
+        sx = np.random.randint(0, width)
+        sy = np.random.randint(0, height)
+        radius = np.random.randint(2, 6)
+        color = (np.random.randint(150, 255), np.random.randint(100, 255), 255)
+        cv2.circle(galaxy_bg, (sx, sy), radius, color, -1)
 
-def get_gesture_name(fingers, is_pinch):
-    """Menentukan nama gestur berdasarkan jari yang terbuka"""
-    if is_pinch:
-        return "PINCH (Menjepit)"
-    total = sum(fingers)
-    if total == 0:
-        return "FIST (Mengepal)"
-    elif total == 5:
-        return "OPEN PALM (Tangan Terbuka)"
-    elif fingers == [0, 1, 0, 0, 0]:
-        return "POINTING (Menunjuk)"
-    elif fingers == [0, 1, 1, 0, 0]:
-        return "PEACE / VICTORY (V)"
-    elif fingers == [1, 0, 0, 0, 0]:
-        return "THUMBS UP"
-    elif fingers == [0, 1, 0, 0, 1]:
-        return "ROCK ON 🤘"
-    return f"{total} Jari Terbuka"
+    return galaxy_bg
+
+def apply_filter(roi, filter_name, x=0, y=0, mask_person=None, frame_galaxy=None):
+    """Menerapkan salah satu dari 11 filter pada Region of Interest (ROI)"""
+    if roi is None or roi.size == 0:
+        return roi
+
+    h_r, w_r = roi.shape[:2]
+
+    if filter_name == "MONO":
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
+    elif filter_name == "INVERT":
+        return cv2.bitwise_not(roi)
+
+    elif filter_name == "BLUR":
+        ksize = max(3, (min(h_r, w_r) // 10) | 1) # ganjil
+        return cv2.GaussianBlur(roi, (ksize, ksize), 0)
+
+    elif filter_name == "SEPIA":
+        kernel = np.array([[0.272, 0.534, 0.131],
+                           [0.349, 0.686, 0.168],
+                           [0.393, 0.769, 0.189]])
+        filtered = cv2.transform(roi, kernel)
+        return np.clip(filtered, 0, 255).astype(np.uint8)
+
+    elif filter_name == "DUAL-TONE":
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        _, mask_c = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+        filtered = np.zeros_like(roi)
+        filtered[mask_c == 255] = [0, 165, 255] # Orange
+        filtered[mask_c == 0] = [147, 20, 255]  # Pink
+        return filtered
+
+    elif filter_name == "PIXELATE":
+        if h_r > 10 and w_r > 10:
+            small = cv2.resize(roi, (max(1, w_r // 12), max(1, h_r // 12)), interpolation=cv2.INTER_LINEAR)
+            return cv2.resize(small, (w_r, h_r), interpolation=cv2.INTER_NEAREST)
+
+    elif filter_name == "THERMAL":
+        return cv2.applyColorMap(roi, cv2.COLORMAP_JET)
+
+    elif filter_name == "SKETCH":
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        inv = cv2.bitwise_not(gray)
+        blur = cv2.GaussianBlur(inv, (21, 21), 0)
+        sketch = cv2.divide(gray, 255 - blur, scale=256)
+        return cv2.cvtColor(sketch, cv2.COLOR_GRAY2BGR)
+
+    elif filter_name == "GLITCH":
+        shift = max(5, w_r // 20)
+        glitch_roi = roi.copy()
+        if w_r > shift:
+            glitch_roi[:, :-shift, 2] = roi[:, shift:, 2]
+            glitch_roi[:, shift:, 0] = roi[:, :-shift, 0]
+        return glitch_roi
+
+    elif filter_name == "NEON":
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+        edges = cv2.Canny(blur, 50, 150)
+        edges_bgr = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+        edges_bgr[np.where((edges_bgr == [255, 255, 255]).all(axis=2))] = [255, 255, 0]
+        kernel = np.ones((3, 3), np.uint8)
+        return cv2.dilate(edges_bgr, kernel, iterations=1)
+
+    elif filter_name == "GALAXY" and frame_galaxy is not None:
+        roi_galaxy = frame_galaxy[y:y+h_r, x:x+w_r]
+        if roi_galaxy.shape[:2] == (h_r, w_r):
+            if mask_person is not None:
+                roi_mask = mask_person[y:y+h_r, x:x+w_r]
+                bg_condition = (roi_mask == 0)
+                filtered = roi.copy()
+                filtered[bg_condition] = roi_galaxy[bg_condition]
+                return filtered
+            else:
+                # Transparan blend galaxy background
+                return cv2.addWeighted(roi, 0.4, roi_galaxy, 0.6, 0)
+
+    return roi
 
 def main():
     # Ambil index kamera dari argumen terminal (default: 0, atau 1 untuk USB)
@@ -64,291 +143,234 @@ def main():
         print("Error: Tidak dapat mengakses kamera/webcam apapun.")
         return
 
-    # Set format MJPEG, resolusi 1920x1080, dan 30 FPS
+    # Set format MJPEG, resolusi Full HD 1920x1080 @ 30 FPS
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
     cap.set(cv2.CAP_PROP_FPS, 30)
 
     # Inisialisasi Window Resizable agar pas di layar laptop
-    window_name = "Hand Gesture Multi-Filters System"
+    window_name = "RETROLENS - Hand Gesture Portal Filter"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(window_name, 1280, 720)
+
+    # Generate Galaxy Background
+    galaxy_bg = generate_galaxy_background(1080, 1920)
 
     # Inisialisasi MediaPipe Hands
     mp_hands = mp.solutions.hands
     mp_drawing = mp.solutions.drawing_utils
     mp_drawing_styles = mp.solutions.drawing_styles
 
-    # Mode Filter:
-    # 0: Normal + Hand Landmarks
-    # 1: Air Canvas (Melukis di Udara)
-    # 2: Interactive Drag & Drop Object
-    # 3: Cyberpunk & Energy Lightning
-    # 4: AR Magic Portal Rings
-    # 5: Cartoon & Edge Detection
-    filter_mode = 0
-    filter_names = [
-        "0: Normal Tracking",
-        "1: Air Canvas (Melukis)",
-        "2: Drag & Drop Object",
-        "3: Cyberpunk & Energy",
-        "4: AR Magic Ring",
-        "5: Cartoon & Edge Filter"
-    ]
-
-    # --- VARIABEL UNTUK AIR CANVAS (MODE 1) ---
-    canvas = None
-    colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 255, 255), (0, 0, 0)] # Biru, Hijau, Merah, Kuning, Penghapus
-    color_names = ["Biru", "Hijau", "Merah", "Kuning", "Eraser"]
-    current_color_idx = 0
-    brush_thickness = 8
-    eraser_thickness = 40
-    xp, yp = 0, 0
-
-    # --- VARIABEL UNTUK DRAG & DROP (MODE 2) ---
-    rect_pos = [400, 300] # [x, y]
-    rect_size = [200, 200]
-    is_dragging = False
-
+    current_filter = 0
+    gesture_triggered = False
+    full_frame_mode = False # Toggle layar penuh vs Portal miring
     prev_time = 0
 
     print("\n========================================================")
-    print(" 🚀 Hand Gesture Multi-Filter System Ready!")
-    print(" 📷 Resolusi: Full HD 1920x1080 @ 30 FPS (120° Wide Angle)")
+    print(" 🚀 RETROLENS - Hand Gesture Portal Filters Ready!")
+    print(" 📷 Mode Kamera: Full HD 1920x1080 @ 30 FPS (120° Wide Angle)")
     print(" ------------------------------------------------------")
-    print(" ⌨️  KONTROL FILTER:")
-    print("   [0] Normal Tracking Mode")
-    print("   [1] Air Canvas (Melukis di Udara)")
-    print("   [2] Interactive Drag & Drop Box")
-    print("   [3] Cyberpunk & Energy Aura Filter")
-    print("   [4] AR Magic Portal Rings")
-    print("   [5] Cartoon & Canny Edge Filter")
-    print("   [c] Clear Canvas (Hapus Lukisan di Mode 1)")
+    print(" 🖐️ GESTUR KONTROL PORTAL:")
+    print("   - Bentuk Portal: Posisikan 2 Tangan (Jempol & Telunjuk)")
+    print("   - Ganti Filter: Sentuhkan Jempol & Kelingking ATAU 2 Telunjuk")
+    print(" ------------------------------------------------------")
+    print(" ⌨️  KONTROL KEYBOARD:")
+    print("   [TAB / SPACE] Ganti Filter berikutnya")
+    print("   [f] Toggle Layar Penuh vs Portal Area")
+    print("   [0 - 9] Pilih Filter Langsung (MONO, DUAL-TONE, SKETCH, dll)")
     print("   [q / ESC] Keluar dari Aplikasi")
     print("========================================================\n")
 
     with mp_hands.Hands(
         static_image_mode=False,
         max_num_hands=2,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5
+        min_detection_confidence=0.6,
+        min_tracking_confidence=0.6
     ) as hands:
         while cap.isOpened():
-            success, image = cap.read()
+            success, img = cap.read()
             if not success:
                 continue
 
             # Flip horizontal agar seperti cermin
-            image = cv2.flip(image, 1)
-            h, w, c = image.shape
+            img = cv2.flip(img, 1)
+            h, w, c = img.shape
 
-            # Inisialisasi kanvas lukis jika belum ada
-            if canvas is None or canvas.shape != image.shape:
-                canvas = np.zeros((h, w, 3), dtype=np.uint8)
+            # Frame galaxy disesuaikan dengan dimensi kamera aktif
+            frame_galaxy = galaxy_bg[:h, :w]
 
-            # Konversi warna BGR ke RGB untuk MediaPipe
-            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            results = hands.process(image_rgb)
+            # Konversi BGR ke RGB untuk MediaPipe
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            results = hands.process(img_rgb)
 
-            gesture_text = "Menunggu Tangan..."
+            filter_name = FILTERS[current_filter]
+            pts_portal = []
+            change_filter = False
 
-            if results.multi_hand_landmarks and results.multi_handedness:
-                for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
-                    hand_label = handedness.classification[0].label # "Right" atau "Left"
-                    lm = hand_landmarks.landmark
+            if results.multi_hand_landmarks:
+                # 1. CEK GESTUR GANTI FILTER: 2 Ujung Telunjuk Saling Mendekat
+                if len(results.multi_hand_landmarks) >= 2:
+                    idx0 = results.multi_hand_landmarks[0].landmark[8]
+                    idx1 = results.multi_hand_landmarks[1].landmark[8]
+                    pt0 = (int(idx0.x * w), int(idx0.y * h))
+                    pt1 = (int(idx1.x * w), int(idx1.y * h))
+                    if math.hypot(pt0[0] - pt1[0], pt0[1] - pt1[1]) < 45:
+                        change_filter = True
 
-                    # Hitung jari & gestur
-                    total_fingers, finger_state = count_fingers(lm, hand_label)
-                    
-                    # Koordinat Ujung Jempol (ID 4) & Telunjuk (ID 8) & Tengah (ID 12)
-                    thumb_pos = (int(lm[4].x * w), int(lm[4].y * h))
-                    index_pos = (int(lm[8].x * w), int(lm[8].y * h))
-                    middle_pos = (int(lm[12].x * w), int(lm[12].y * h))
+                # 2. CEK GESTUR GANTI FILTER: Jempol & Kelingking Saling Mendekat pada 1 Tangan
+                for hand_lms in results.multi_hand_landmarks:
+                    thumb = hand_lms.landmark[4]
+                    pinky = hand_lms.landmark[20]
+                    tx, ty = int(thumb.x * w), int(thumb.y * h)
+                    px, py = int(pinky.x * w), int(pinky.y * h)
+                    if math.hypot(tx - px, ty - py) < 45:
+                        change_filter = True
 
-                    distance_pinch = math.hypot(index_pos[0] - thumb_pos[0], index_pos[1] - thumb_pos[1])
-                    pinch_threshold = int(w * 0.04)
-                    is_pinch = distance_pinch < pinch_threshold
+                # Trigger Pergantian Filter (Debounce)
+                if change_filter:
+                    if not gesture_triggered:
+                        current_filter = (current_filter + 1) % len(FILTERS)
+                        gesture_triggered = True
+                        print(f"Gestur Terdeteksi! Pindah ke Filter: {FILTERS[current_filter]}")
+                else:
+                    gesture_triggered = False
 
-                    gesture_text = f"[{hand_label}] {get_gesture_name(finger_state, is_pinch)}"
+                # Ambil koordinat Ujung Jempol (ID 4) dan Telunjuk (ID 8) untuk titik portal
+                for hand_lms in results.multi_hand_landmarks:
+                    # Gambar koneksi skeleton bawaan MediaPipe
+                    mp_drawing.draw_landmarks(
+                        img,
+                        hand_lms,
+                        mp_hands.HAND_CONNECTIONS,
+                        mp_drawing_styles.get_default_hand_landmarks_style(),
+                        mp_drawing_styles.get_default_hand_connections_style()
+                    )
 
-                    # --- GAMBAR LANDMARK HAND (Semua Mode kecuali Cartoon) ---
-                    if filter_mode != 5:
-                        mp_drawing.draw_landmarks(
-                            image,
-                            hand_landmarks,
-                            mp_hands.HAND_CONNECTIONS,
-                            mp_drawing_styles.get_default_hand_landmarks_style(),
-                            mp_drawing_styles.get_default_hand_connections_style()
-                        )
+                    for id_lm in [4, 8]:
+                        cx = int(hand_lms.landmark[id_lm].x * w)
+                        cy = int(hand_lms.landmark[id_lm].y * h)
+                        pts_portal.append([cx, cy])
+                        cv2.circle(img, (cx, cy), 10, (255, 255, 0), cv2.FILLED)
 
-                    # ========================================================
-                    # MODE 1: AIR CANVAS (MELUKIS DI UDARA)
-                    # ========================================================
-                    if filter_mode == 1:
-                        # Gestur 2 Jari Terbuka (Telunjuk + Tengah) = SELECTION MODE (Pilih Warna)
-                        if finger_state[1] == 1 and finger_state[2] == 1 and finger_state[3] == 0:
-                            xp, yp = 0, 0
-                            cv2.rectangle(image, (index_pos[0]-15, index_pos[1]-15), 
-                                          (middle_pos[0]+15, middle_pos[1]+15), (255, 255, 255), 2)
-                            cv2.putText(image, "MODE: PILIH WARNA", (index_pos[0]-40, index_pos[1]-30),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                # ========================================================
+                # FILTER LAYAR PENUH (FULL FRAME MODE)
+                # ========================================================
+                if full_frame_mode:
+                    img = apply_filter(img, filter_name, 0, 0, None, frame_galaxy)
 
-                            # Cek sentuhan di Palette Warna (Header)
-                            if index_pos[1] < 120:
-                                for idx in range(len(colors)):
-                                    btn_x1 = 600 + idx * 110
-                                    btn_x2 = btn_x1 + 100
-                                    if btn_x1 < index_pos[0] < btn_x2:
-                                        current_color_idx = idx
+                # ========================================================
+                # 4 POIN -> PORTAL MIRING (POLYGON) BETWEEN 2 HANDS
+                # ========================================================
+                elif len(pts_portal) == 4:
+                    # Urutkan titik berdasarkan koordinat Y (Atas & Bawah)
+                    pts_portal.sort(key=lambda p: p[1])
+                    top_pts = pts_portal[:2]
+                    bottom_pts = pts_portal[2:]
 
-                        # Gestur 1 Jari Telunjuk Terbuka = DRAWING MODE (Menggambar)
-                        elif finger_state[1] == 1 and finger_state[2] == 0:
-                            cv2.circle(image, index_pos, 12, colors[current_color_idx], cv2.FILLED)
-                            
-                            if xp == 0 and yp == 0:
-                                xp, yp = index_pos
+                    # Urutkan titik berdasarkan koordinat X (Kiri & Kanan)
+                    top_pts.sort(key=lambda p: p[0])
+                    bottom_pts.sort(key=lambda p: p[0])
 
-                            thick = eraser_thickness if current_color_idx == 4 else brush_thickness
-                            cv2.line(canvas, (xp, yp), index_pos, colors[current_color_idx], thick)
-                            cv2.line(image, (xp, yp), index_pos, colors[current_color_idx], thick)
-                            xp, yp = index_pos
-                        else:
-                            xp, yp = 0, 0
+                    poly_pts = np.array([top_pts[0], top_pts[1], bottom_pts[1], bottom_pts[0]], dtype=np.int32)
 
-                    # ========================================================
-                    # MODE 2: INTERACTIVE DRAG & DROP OBJECT
-                    # ========================================================
-                    elif filter_mode == 2:
-                        rx, ry = rect_pos
-                        rw, rh = rect_size
+                    # Dapatkan Bounding Box area Polygon
+                    x, y, bw, bh = cv2.boundingRect(poly_pts)
+                    x, y = max(0, x), max(0, y)
+                    bw, bh = min(w - x, bw), min(h - y, bh)
 
-                        # Cek apakah Pinch di dalam area Kotak
-                        if is_pinch and (rx < thumb_pos[0] < rx + rw) and (ry < thumb_pos[1] < ry + rh):
-                            is_dragging = True
-                            rect_pos[0] = thumb_pos[0] - rw // 2
-                            rect_pos[1] = thumb_pos[1] - rh // 2
-                        elif not is_pinch:
-                            is_dragging = False
+                    if bw > 0 and bh > 0:
+                        roi = img[y:y+bh, x:x+bw].copy()
+                        filtered_roi = apply_filter(roi, filter_name, x, y, None, frame_galaxy)
 
-                    # ========================================================
-                    # MODE 3: CYBERPUNK & ENERGY LIGHTNING
-                    # ========================================================
-                    elif filter_mode == 3:
-                        # Garis petir antara setiap jari dan pergelangan
-                        wrist_pos = (int(lm[0].x * w), int(lm[0].y * h))
-                        for tip_id in [4, 8, 12, 16, 20]:
-                            tip_pos = (int(lm[tip_id].x * w), int(lm[tip_id].y * h))
-                            cv2.line(image, wrist_pos, tip_pos, (255, 255, 0), 2, cv2.LINE_AA)
-                            cv2.circle(image, tip_pos, 15, (0, 255, 255), -1, cv2.LINE_AA)
+                        # Buat Mask Polygon untuk mengisolasi area portal
+                        mask = np.zeros((bh, bw), dtype=np.uint8)
+                        poly_roi = poly_pts - [x, y]
+                        cv2.fillPoly(mask, [poly_roi], 255)
+                        mask_3ch = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
 
-                        if is_pinch:
-                            mid_x = (thumb_pos[0] + index_pos[0]) // 2
-                            mid_y = (thumb_pos[1] + index_pos[1]) // 2
-                            cv2.circle(image, (mid_x, mid_y), 45, (0, 255, 255), 4, cv2.LINE_AA)
-                            cv2.circle(image, (mid_x, mid_y), 25, (255, 255, 0), -1, cv2.LINE_AA)
+                        # Aplikasikan hasil filter hanya di dalam area polygon portal
+                        img[y:y+bh, x:x+bw] = np.where(mask_3ch == 255, filtered_roi, roi)
 
-                    # ========================================================
-                    # MODE 4: AR MAGIC PORTAL RINGS
-                    # ========================================================
-                    elif filter_mode == 4:
-                        wrist_pos = (int(lm[0].x * w), int(lm[0].y * h))
-                        angle = int((time.time() * 100) % 360)
+                        # Gambar garis tepi portal
+                        cv2.polylines(img, [poly_pts], True, (255, 255, 255), 3, cv2.LINE_AA)
 
-                        # Ring konsentris yang berputar di pergelangan
-                        cv2.ellipse(image, wrist_pos, (60, 25), angle, 0, 360, (0, 255, 255), 3, cv2.LINE_AA)
-                        cv2.ellipse(image, wrist_pos, (80, 35), -angle, 0, 360, (255, 0, 255), 2, cv2.LINE_AA)
+                        # --- PARTIKEL GLOW DI TEPI PORTAL ---
+                        for i in range(4):
+                            p_start = poly_pts[i]
+                            p_end = poly_pts[(i + 1) % 4]
+                            for _ in range(5):
+                                alpha = np.random.random()
+                                px = int(p_start[0] * alpha + p_end[0] * (1 - alpha)) + np.random.randint(-12, 12)
+                                py = int(p_start[1] * alpha + p_end[1] * (1 - alpha)) + np.random.randint(-12, 12)
+                                cv2.circle(img, (px, py), np.random.randint(2, 5), (0, 255, 255), -1)
 
-                        # Aura di ujung jari
-                        cv2.circle(image, index_pos, 20, (0, 200, 255), 2, cv2.LINE_AA)
-                        cv2.circle(image, index_pos, 8, (255, 255, 255), -1, cv2.LINE_AA)
+                        # Label Nama Portal
+                        cv2.putText(img, f"PORTAL: {filter_name}", (top_pts[0][0], max(30, top_pts[0][1] - 15)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
 
-            # ========================================================
-            # RENDER FILTER SPESIFIK (TAMPILAN MONITOR)
-            # ========================================================
+                # Jika hanya 1 tangan (2 poin), terapkan filter di sekeliling lingkaran jempol & telunjuk
+                elif len(pts_portal) == 2 and not full_frame_mode:
+                    cx = (pts_portal[0][0] + pts_portal[1][0]) // 2
+                    cy = (pts_portal[0][1] + pts_portal[1][1]) // 2
+                    radius = int(math.hypot(pts_portal[0][0] - pts_portal[1][0], pts_portal[0][1] - pts_portal[1][1])) // 2 + 30
 
-            # Render Canvas di Mode 1
-            if filter_mode == 1:
-                # Gabungkan lukisan canvas ke image kamera
-                img_gray = cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY)
-                _, img_inv = cv2.threshold(img_gray, 10, 255, cv2.THRESH_BINARY_INV)
-                img_inv = cv2.cvtColor(img_inv, cv2.COLOR_GRAY2BGR)
-                image = cv2.bitwise_and(image, img_inv)
-                image = cv2.bitwise_or(image, canvas)
+                    x1, y1 = max(0, cx - radius), max(0, cy - radius)
+                    x2, y2 = min(w, cx + radius), min(h, cy + radius)
+                    bw, bh = x2 - x1, y2 - y1
 
-                # Palette Warna Bar (UI Header atas)
-                cv2.rectangle(image, (580, 10), (1150, 100), (40, 40, 40), -1)
-                cv2.rectangle(image, (580, 10), (1150, 100), (255, 255, 255), 2)
-                for idx, col in enumerate(colors):
-                    bx = 600 + idx * 110
-                    cv2.rectangle(image, (bx, 20), (bx + 90, 80), col, -1)
-                    if idx == current_color_idx:
-                        cv2.rectangle(image, (bx-4, 16), (bx + 94, 84), (255, 255, 255), 3)
-                    cv2.putText(image, color_names[idx], (bx + 10, 65),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+                    if bw > 0 and bh > 0:
+                        roi = img[y1:y2, x1:x2].copy()
+                        filtered_roi = apply_filter(roi, filter_name, x1, y1, None, frame_galaxy)
 
-            # Render Drag & Drop Box di Mode 2
-            elif filter_mode == 2:
-                rx, ry = rect_pos
-                rw, rh = rect_size
-                box_color = (0, 255, 0) if is_dragging else (255, 100, 0)
+                        mask = np.zeros((bh, bw), dtype=np.uint8)
+                        cv2.circle(mask, (cx - x1, cy - y1), radius, 255, -1)
+                        mask_3ch = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
 
-                # Gambar kotak transparan bercahaya
-                overlay = image.copy()
-                cv2.rectangle(overlay, (rx, ry), (rx + rw, ry + rh), box_color, -1)
-                cv2.addWeighted(overlay, 0.4, image, 0.6, 0, image)
-                cv2.rectangle(image, (rx, ry), (rx + rw, ry + rh), box_color, 4)
+                        img[y1:y2, x1:x2] = np.where(mask_3ch == 255, filtered_roi, roi)
+                        cv2.circle(img, (cx, cy), radius, (0, 255, 255), 2, cv2.LINE_AA)
+                        cv2.putText(img, f"MINI PORTAL: {filter_name}", (x1, max(30, y1 - 10)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
 
-                status_box = "HOLD & DRAG WITH PINCH" if is_dragging else "PINCH TO DRAG BOX"
-                cv2.putText(image, status_box, (rx + 10, ry + rh // 2),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
-
-            # Render Cyberpunk Background Overlay di Mode 3
-            elif filter_mode == 3:
-                overlay = image.copy()
-                cv2.rectangle(overlay, (0, 0), (w, h), (150, 0, 150), -1)
-                cv2.addWeighted(overlay, 0.12, image, 0.88, 0, image)
-
-            # Render Cartoon & Edge Filter di Mode 5
-            elif filter_mode == 5:
-                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                gray_blur = cv2.medianBlur(gray, 5)
-                edges = cv2.adaptiveThreshold(gray_blur, 255, cv2.ADAPTIVE_THRESH_MEAN_C, 
-                                              cv2.THRESH_BINARY, 9, 9)
-                color_img = cv2.bilateralFilter(image, 9, 250, 250)
-                image = cv2.bitwise_and(color_img, color_img, mask=edges)
+            elif full_frame_mode:
+                img = apply_filter(img, filter_name, 0, 0, None, frame_galaxy)
 
             # ========================================================
-            # UI PANEL ATAS (HEADER HUD & SELEKSI FILTER)
+            # OVERLAY INFORMASI HUD PANEL ATAS
             # ========================================================
             curr_time = time.time()
             fps = 1 / (curr_time - prev_time) if (curr_time - prev_time) > 0 else 0
             prev_time = curr_time
 
-            # Panel Utama Infobar
-            cv2.rectangle(image, (10, 10), (550, 110), (20, 20, 20), -1)
-            cv2.rectangle(image, (10, 10), (550, 110), (0, 255, 255), 2)
+            cv2.rectangle(img, (10, 10), (620, 110), (20, 20, 20), -1)
+            cv2.rectangle(img, (10, 10), (620, 110), (0, 255, 255), 2)
 
-            cv2.putText(image, f"FPS: {int(fps)} | Mode: {filter_names[filter_mode]}", (25, 40),
+            mode_type = "Full Frame" if full_frame_mode else "Portal (4 Points / 2 Hands)"
+            cv2.putText(img, f"FPS: {int(fps)} | Mode: {mode_type}", (25, 40),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2, cv2.LINE_AA)
-            cv2.putText(image, f"Gestur: {gesture_text}", (25, 70),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
-            cv2.putText(image, "Tekan 0-5 utk Ganti Filter | [c] Clear Canvas | [q] Quit", (25, 95),
+            cv2.putText(img, f"Filter Aktif: {filter_name} [{current_filter + 1}/{len(FILTERS)}]", (25, 70),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
+            cv2.putText(img, "Ganti Filter: Touch Jempol+Kelingking | [TAB] Switch | [f] Toggle Full", (25, 95),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1, cv2.LINE_AA)
 
-            # Tampilkan window kamera
-            cv2.imshow(window_name, image)
+            # Display Frame
+            cv2.imshow(window_name, img)
 
-            # --- INPUT KEYBOARD CONTROLS ---
+            # Keyboard Input Controls
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q') or key == 27:
                 break
-            elif ord('0') <= key <= ord('5'):
-                filter_mode = key - ord('0')
-                print(f"Mengubah Mode Filter ke: {filter_names[filter_mode]}")
-            elif key == ord('c') or key == ord('C'):
-                canvas = np.zeros((h, w, 3), dtype=np.uint8)
-                print("Kanvas lukis telah dibersihkan!")
+            elif key in [9, 32]: # TAB atau SPACE
+                current_filter = (current_filter + 1) % len(FILTERS)
+                print(f"Pindah Filter ke: {FILTERS[current_filter]}")
+            elif key == ord('f') or key == ord('F'):
+                full_frame_mode = not full_frame_mode
+                print(f"Toggle Full Frame Mode: {full_frame_mode}")
+            elif ord('0') <= key <= ord('9'):
+                idx_key = key - ord('0')
+                if idx_key < len(FILTERS):
+                    current_filter = idx_key
+                    print(f"Pilih Filter Direct: {FILTERS[current_filter]}")
 
     cap.release()
     cv2.destroyAllWindows()
