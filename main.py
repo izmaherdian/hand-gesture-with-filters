@@ -337,8 +337,8 @@ def main():
                         mp_styles.get_default_hand_connections_style()
                     )
 
-                    # Fingertips: 4 (Thumb), 8 (Index), 12 (Middle), 16 (Ring)
-                    for id_lm in [4, 8, 12, 16]:
+                    # Fingertips: 4 (Thumb), 8 (Index), 12 (Middle)
+                    for id_lm in [4, 8, 12]:
                         cx = int(hand_lms.landmark[id_lm].x * w)
                         cy = int(hand_lms.landmark[id_lm].y * h)
                         dot_col = C_FINGER if id_lm in [4, 8] else (255, 120, 200)
@@ -387,13 +387,13 @@ def main():
                                 sy = int(p1[1]*a + p2[1]*(1-a)) + np.random.randint(-8, 8)
                                 cv2.circle(img, (sx, sy), np.random.randint(1, 3), C_PORTAL_A, -1)
 
-                    # ── PORTAL 2 (Secondary): Middle (12) & Ring (16) ──
+                    # ── PORTAL 2 (Secondary): Index (8) & Middle (12) ──
                     filter_name_2 = FILTERS[(current_filter + 1) % len(FILTERS)]
                     raw_pts_2 = np.array([
+                        [int(h_left.landmark[8].x * w), int(h_left.landmark[8].y * h)],
                         [int(h_left.landmark[12].x * w), int(h_left.landmark[12].y * h)],
-                        [int(h_left.landmark[16].x * w), int(h_left.landmark[16].y * h)],
-                        [int(h_right.landmark[16].x * w), int(h_right.landmark[16].y * h)],
-                        [int(h_right.landmark[12].x * w), int(h_right.landmark[12].y * h)]
+                        [int(h_right.landmark[12].x * w), int(h_right.landmark[12].y * h)],
+                        [int(h_right.landmark[8].x * w), int(h_right.landmark[8].y * h)]
                     ], dtype=np.float32)
 
                     if smoothed_pts_2 is None:
