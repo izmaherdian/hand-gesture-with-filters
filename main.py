@@ -261,6 +261,7 @@ def main():
     gesture_triggered = False
     full_frame_mode = False
     fps_display = 30.0
+    smoothed_pts = None
 
     # Smoothed FPS using exponential moving average
     fps_alpha = 0.15
@@ -323,21 +324,27 @@ def main():
                 else:
                     gesture_triggered = False
 
-                # ── Collect portal points + draw hand skeleton ──
-                for hand_lms in results.multi_hand_landmarks:
-                    # Draw clean hand skeleton
+                # ── Collect hand landmarks with Hand-based Deterministic Mapping ──
+                hand_points_dict = {}  # 'left': [thumb, index], 'right': [thumb, index]
+                
+                # Sort hands left-to-right by wrist X coordinate if 2 hands detected
+                sorted_hands = results.multi_hand_landmarks
+                if len(results.multi_hand_landmarks) == 2:
+                    sorted_hands = sorted(results.multi_hand_landmarks, key=lambda h_lm: h_lm.landmark[0].x)
+                
+                for idx, hand_lms in enumerate(sorted_hands):
                     mp_draw.draw_landmarks(
                         img, hand_lms, mp_hands.HAND_CONNECTIONS,
                         mp_styles.get_default_hand_landmarks_style(),
                         mp_styles.get_default_hand_connections_style()
                     )
 
-                    for id_lm in [4, 8]:
-                        cx = int(hand_lms.landmark[id_lm].x * w)
-                        cy = int(hand_lms.landmark[id_lm].y * h)
-                        pts_portal.append([cx, cy])
+                    t_pt = [int(hand_lms.landmark[4].x * w), int(hand_lms.landmark[4].y * h)]
+                    i_pt = [int(hand_lms.landmark[8].x * w), int(hand_lms.landmark[8].y * h)]
+                    pts_portal.extend([t_pt, i_pt])
 
-                        # Small, clean finger dots
+                    # Small, clean finger dots
+                    for cx, cy in [t_pt, i_pt]:
                         cv2.circle(img, (cx, cy), 8, C_FINGER, 2, cv2.LINE_AA)
                         cv2.circle(img, (cx, cy), 3, C_WHITE, -1, cv2.LINE_AA)
 
@@ -345,15 +352,24 @@ def main():
                 if full_frame_mode:
                     img = apply_filter(img, filter_name, 0, 0, None, frame_galaxy)
 
-                # ── MODE: 4-Point Portal (2 hands) ──
-                elif len(pts_portal) == 4:
-                    pts_portal.sort(key=lambda p: p[1])
-                    top_pts = sorted(pts_portal[:2], key=lambda p: p[0])
-                    bottom_pts = sorted(pts_portal[2:], key=lambda p: p[0])
+                # ── MODE: 4-Point Flexible Foldable Portal (2 hands) ──
+                elif len(sorted_hands) == 2:
+                    # Deterministic Loop: Left Thumb -> Left Index -> Right Index -> Right Thumb
+                    h_left, h_right = sorted_hands[0], sorted_hands[1]
+                    raw_pts = np.array([
+                        [int(h_left.landmark[4].x * w), int(h_left.landmark[4].y * h)],   # Left Thumb
+                        [int(h_left.landmark[8].x * w), int(h_left.landmark[8].y * h)],   # Left Index
+                        [int(h_right.landmark[8].x * w), int(h_right.landmark[8].y * h)], # Right Index
+                        [int(h_right.landmark[4].x * w), int(h_right.landmark[4].y * h)]  # Right Thumb
+                    ], dtype=np.float32)
 
-                    poly_pts = np.array(
-                        [top_pts[0], top_pts[1], bottom_pts[1], bottom_pts[0]],
-                        dtype=np.int32)
+                    # Exponential Moving Average (EMA) Vertex Smoothing (Smooth 0.35)
+                    if smoothed_pts is None:
+                        smoothed_pts = raw_pts.copy()
+                    else:
+                        smoothed_pts = 0.35 * raw_pts + 0.65 * smoothed_pts
+
+                    poly_pts = smoothed_pts.astype(np.int32)
 
                     x, y, bw, bh = cv2.boundingRect(poly_pts)
                     x, y = max(0, x), max(0, y)
@@ -371,7 +387,7 @@ def main():
                         img[y:y+bh, x:x+bw] = np.where(mask3 == 255,
                                                          filtered_roi, roi)
 
-                        # Clean thin portal border (single line, not bulky)
+                        # Clean thin portal border (follows exact folded loop)
                         cv2.polylines(img, [poly_pts], True, C_PORTAL_B, 2,
                                       cv2.LINE_AA)
 
@@ -388,6 +404,7 @@ def main():
 
                 # ── MODE: Mini Portal (1 hand) ──
                 elif len(pts_portal) == 2 and not full_frame_mode:
+                    smoothed_pts = None
                     mx = (pts_portal[0][0] + pts_portal[1][0]) // 2
                     my = (pts_portal[0][1] + pts_portal[1][1]) // 2
                     radius = int(math.hypot(
@@ -411,6 +428,8 @@ def main():
                                                        filtered_roi, roi)
                         cv2.circle(img, (mx, my), radius, C_PORTAL_B, 2,
                                    cv2.LINE_AA)
+                else:
+                    smoothed_pts = None
 
             elif full_frame_mode:
                 img = apply_filter(img, filter_name, 0, 0, None, frame_galaxy)
