@@ -31,24 +31,28 @@ def main():
         print("Error: Tidak dapat mengakses kamera/webcam apapun.")
         return
 
-    # Set resolusi kamera ke 1280x720 untuk tampilan yang lebih jernih
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    # Set format MJPEG untuk performa FPS tinggi (30/60 FPS) pada kamera USB 1080p
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    # Set resolusi kamera ke Full HD 1920x1080
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
     prev_time = 0
 
     print("\n========================================================")
     print(" 🚀 Hand Gesture Filter Started!")
+    print(" 📷 Mode Kamera: Full HD 1920x1080 (Wide Angle 120° Optimized)")
     print(" - Dekatkan Ujung Jempol & Telunjuk untuk efek Pinch Filter")
     print(" - Gerakkan Telunjuk untuk memindahkan Halo Ring")
     print(" - Tekan 'q' atau 'ESC' pada jendela kamera untuk keluar")
     print("========================================================\n")
 
+    # Nilai confidence 0.5 dioptimalkan untuk Wide Angle 120° agar tangan kecil/jauh tetap terdeteksi tajam
     with mp_hands.Hands(
         static_image_mode=False,
         max_num_hands=2,
-        min_detection_confidence=0.7,
-        min_tracking_confidence=0.7
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5
     ) as hands:
         while cap.isOpened():
             success, image = cap.read()
@@ -97,7 +101,8 @@ def main():
                     cv2.circle(image, index_pos, 15, (0, 255, 255), -1, cv2.LINE_AA)
 
                     # --- FILTER 2: GESTUR PINCH / MENJEPIT ---
-                    if distance < 40:
+                    pinch_threshold = int(w * 0.04) # Skala dinamis ~76px pada 1080p untuk Wide Angle
+                    if distance < pinch_threshold:
                         gesture_text = "Gestur: PINCH (Menjepit)! Efek Energi Aktif"
                         filter_mode = "Cyan Glow"
 
