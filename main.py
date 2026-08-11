@@ -134,51 +134,55 @@ def apply_filter(roi, filter_name, x=0, y=0, mask_person=None, frame_galaxy=None
 def draw_minimal_hud(img, fps, current_filter_idx, full_frame_mode):
     """
     Draw a clean, minimal HUD that doesn't block the camera view:
-      - Top-left corner: tiny FPS + mode indicator
+      - Top-left corner: FPS + mode badge
       - Bottom center: Instagram-style filter carousel pills
       - Bottom-right corner: keyboard shortcuts hint
+    All text uses FONT_HERSHEY_DUPLEX with larger sizes for HD clarity.
     """
     h, w = img.shape[:2]
-    overlay = img.copy()
+    FONT = cv2.FONT_HERSHEY_DUPLEX  # Double-stroked = sharper on downscale
 
-    # ── TOP-LEFT: FPS Badge (tiny, unobtrusive) ──
-    badge_w, badge_h = 130, 28
-    bx, by = 16, 14
+    # ── TOP-LEFT: FPS Badge ──
+    overlay = img.copy()
+    badge_w, badge_h = 220, 44
+    bx, by = 20, 18
     cv2.rectangle(overlay, (bx, by), (bx + badge_w, by + badge_h),
                   (20, 18, 22), -1)
     cv2.addWeighted(overlay, 0.55, img, 0.45, 0, img)
 
     # Green dot + FPS text
-    cv2.circle(img, (bx + 12, by + badge_h // 2), 4, C_DOT_ON, -1, cv2.LINE_AA)
-    cv2.putText(img, f"{int(fps)} FPS", (bx + 22, by + 19),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_WHITE, 1, cv2.LINE_AA)
+    cv2.circle(img, (bx + 16, by + badge_h // 2), 6, C_DOT_ON, -1, cv2.LINE_AA)
+    cv2.putText(img, f"{int(fps)} FPS", (bx + 30, by + 30),
+                FONT, 0.65, C_WHITE, 1, cv2.LINE_AA)
 
-    # Mode text right of FPS
+    # Mode label
     mode_txt = "FULL" if full_frame_mode else "PORTAL"
-    cv2.putText(img, mode_txt, (bx + 80, by + 19),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.38, C_DIMMED, 1, cv2.LINE_AA)
+    cv2.putText(img, mode_txt, (bx + 125, by + 30),
+                FONT, 0.55, C_DIMMED, 1, cv2.LINE_AA)
 
     # ── BOTTOM CENTER: Instagram-style Filter Carousel ──
     overlay2 = img.copy()
 
-    pill_w = 90
-    pill_h = 30
-    pill_gap = 6
+    pill_w = 130
+    pill_h = 42
+    pill_gap = 8
     total_carousel_w = len(FILTERS) * (pill_w + pill_gap) - pill_gap
     carousel_x = (w - total_carousel_w) // 2
-    carousel_y = h - 58
+    carousel_y = h - 80
 
     # Frosted glass bar behind carousel
-    bar_pad = 14
+    bar_pad = 18
     bar_x1 = max(0, carousel_x - bar_pad)
     bar_x2 = min(w, carousel_x + total_carousel_w + bar_pad)
-    bar_y1 = carousel_y - 10
-    bar_y2 = h - 10
-    cv2.rectangle(overlay2, (bar_x1, bar_y1), (bar_x2, bar_y2), (18, 16, 20), -1)
+    bar_y1 = carousel_y - 14
+    bar_y2 = h - 12
+    cv2.rectangle(overlay2, (bar_x1, bar_y1), (bar_x2, bar_y2),
+                  (18, 16, 20), -1)
     cv2.addWeighted(overlay2, 0.50, img, 0.50, 0, img)
 
-    # Thin top border line
-    cv2.line(img, (bar_x1, bar_y1), (bar_x2, bar_y1), (60, 58, 65), 1, cv2.LINE_AA)
+    # Top border line
+    cv2.line(img, (bar_x1, bar_y1), (bar_x2, bar_y1),
+             (70, 68, 75), 1, cv2.LINE_AA)
 
     for i, f_name in enumerate(FILTERS):
         px1 = carousel_x + i * (pill_w + pill_gap)
@@ -188,14 +192,11 @@ def draw_minimal_hud(img, fps, current_filter_idx, full_frame_mode):
         is_active = (i == current_filter_idx)
 
         if is_active:
-            # Active pill: filled accent + rounded look
             cv2.rectangle(img, (px1, py1), (px2, py2), C_ACTIVE, -1)
-            # Subtle glow border
             cv2.rectangle(img, (px1 - 1, py1 - 1), (px2 + 1, py2 + 1),
-                          (180, 140, 255), 1, cv2.LINE_AA)
+                          (180, 140, 255), 2, cv2.LINE_AA)
             txt_col = C_WHITE
         else:
-            # Inactive pill: dim background
             cv2.rectangle(img, (px1, py1), (px2, py2), C_PILL_BG, -1)
             txt_col = C_DIMMED
 
@@ -203,25 +204,23 @@ def draw_minimal_hud(img, fps, current_filter_idx, full_frame_mode):
         label = f_name if len(f_name) <= 9 else f_name[:8] + "."
 
         # Center text in pill
-        text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.36, 1)[0]
+        text_size = cv2.getTextSize(label, FONT, 0.55, 1)[0]
         tx = px1 + (pill_w - text_size[0]) // 2
         ty = py1 + (pill_h + text_size[1]) // 2
 
-        cv2.putText(img, label, (tx, ty),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.36, txt_col, 1, cv2.LINE_AA)
+        cv2.putText(img, label, (tx, ty), FONT, 0.55, txt_col, 1, cv2.LINE_AA)
 
     # Active filter name displayed above the carousel
     active_name = FILTERS[current_filter_idx]
-    name_size = cv2.getTextSize(active_name, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)[0]
+    name_size = cv2.getTextSize(active_name, FONT, 0.85, 2)[0]
     nx = (w - name_size[0]) // 2
-    ny = carousel_y - 18
-    cv2.putText(img, active_name, (nx, ny),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, C_WHITE, 1, cv2.LINE_AA)
+    ny = carousel_y - 24
+    cv2.putText(img, active_name, (nx, ny), FONT, 0.85, C_WHITE, 2, cv2.LINE_AA)
 
-    # ── BOTTOM-RIGHT: Shortcut Hints (tiny, dim) ──
-    hints = "[TAB] Next  [F] Mode  [Q] Quit"
-    cv2.putText(img, hints, (w - 310, h - 14),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.34, (100, 100, 100), 1, cv2.LINE_AA)
+    # ── BOTTOM-RIGHT: Shortcut Hints ──
+    hints = "[TAB] Next   [F] Mode   [Q] Quit"
+    cv2.putText(img, hints, (w - 480, h - 16),
+                FONT, 0.5, (120, 120, 120), 1, cv2.LINE_AA)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
