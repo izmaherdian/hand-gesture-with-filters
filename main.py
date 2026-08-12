@@ -263,6 +263,7 @@ def main():
     fps_display = 30.0
     smoothed_pts_1 = None
     smoothed_pts_2 = None
+    smoothed_pts_3 = None
 
     # Smoothed FPS using exponential moving average
     fps_alpha = 0.15
@@ -422,20 +423,60 @@ def main():
                                 sy = int(p1[1]*a + p2[1]*(1-a)) + np.random.randint(-8, 8)
                                 cv2.circle(img, (sx, sy), np.random.randint(1, 3), (255, 100, 255), -1)
 
-                    # ── 3D VOLUMETRIC PRISM CONNECTORS & CHROMATIC OVERLAP ──
-                    # 1. 3D Wireframe Depth Lines connecting Portal 1 to Portal 2
+                    # ── PORTAL 3 (Tertiary): Thumb (4) & Middle (12) ──
+                    filter_name_3 = FILTERS[(current_filter + 2) % len(FILTERS)]
+                    raw_pts_3 = np.array([
+                        [int(h_left.landmark[4].x * w), int(h_left.landmark[4].y * h)],
+                        [int(h_left.landmark[12].x * w), int(h_left.landmark[12].y * h)],
+                        [int(h_right.landmark[12].x * w), int(h_right.landmark[12].y * h)],
+                        [int(h_right.landmark[4].x * w), int(h_right.landmark[4].y * h)]
+                    ], dtype=np.float32)
+
+                    if smoothed_pts_3 is None:
+                        smoothed_pts_3 = raw_pts_3.copy()
+                    else:
+                        smoothed_pts_3 = 0.35 * raw_pts_3 + 0.65 * smoothed_pts_3
+
+                    poly_pts_3 = smoothed_pts_3.astype(np.int32)
+                    x, y, bw, bh = cv2.boundingRect(poly_pts_3)
+                    x, y = max(0, x), max(0, y)
+                    bw, bh = min(w - x, bw), min(h - y, bh)
+
+                    if bw > 0 and bh > 0:
+                        roi = img[y:y+bh, x:x+bw].copy()
+                        filtered_roi_3 = apply_filter(roi, filter_name_3, x, y, None, frame_galaxy)
+                        mask = np.zeros((bh, bw), dtype=np.uint8)
+                        cv2.fillPoly(mask, [poly_pts_3 - [x, y]], 255)
+                        mask3 = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+                        img[y:y+bh, x:x+bw] = np.where(mask3 == 255, filtered_roi_3, roi)
+                        cv2.polylines(img, [poly_pts_3], True, (0, 255, 100), 2, cv2.LINE_AA)
+                        for i in range(4):
+                            p1, p2 = poly_pts_3[i], poly_pts_3[(i + 1) % 4]
+                            for _ in range(3):
+                                a = np.random.random()
+                                sx = int(p1[0]*a + p2[0]*(1-a)) + np.random.randint(-8, 8)
+                                sy = int(p1[1]*a + p2[1]*(1-a)) + np.random.randint(-8, 8)
+                                cv2.circle(img, (sx, sy), np.random.randint(1, 3), (100, 255, 150), -1)
+
+                    # ── 3D TRIPLE-VOLUMETRIC PRISM CONNECTORS & CHROMATIC OVERLAP ──
+                    # 1. 3D Wireframe Depth Lines connecting all 3 portals (P1 <-> P2 <-> P3)
                     for i in range(4):
                         pt1 = tuple(poly_pts_1[i])
                         pt2 = tuple(poly_pts_2[i])
+                        pt3 = tuple(poly_pts_3[i])
                         cv2.line(img, pt1, pt2, (255, 220, 100), 1, cv2.LINE_AA)
+                        cv2.line(img, pt2, pt3, (100, 255, 200), 1, cv2.LINE_AA)
+                        cv2.line(img, pt3, pt1, (255, 100, 255), 1, cv2.LINE_AA)
 
-                    # 2. Check Overlap Region & Apply 3D RGB-Shift Hologram
+                    # 2. Check Multi-Overlap Region & Apply 3D RGB-Shift Hologram
                     full_mask_1 = np.zeros((h, w), dtype=np.uint8)
                     full_mask_2 = np.zeros((h, w), dtype=np.uint8)
+                    full_mask_3 = np.zeros((h, w), dtype=np.uint8)
                     cv2.fillPoly(full_mask_1, [poly_pts_1], 255)
                     cv2.fillPoly(full_mask_2, [poly_pts_2], 255)
+                    cv2.fillPoly(full_mask_3, [poly_pts_3], 255)
 
-                    overlap_mask = cv2.bitwise_and(full_mask_1, full_mask_2)
+                    overlap_mask = cv2.bitwise_and(full_mask_1, cv2.bitwise_or(full_mask_2, full_mask_3))
                     if np.any(overlap_mask > 0):
                         # 3D Chromatic Aberration (RGB Shift 6px)
                         shift = 6
@@ -454,7 +495,7 @@ def main():
 
                 # ── MODE 3: Mini Portal (1 Hand) ──
                 elif len(results.multi_hand_landmarks) == 1 and not full_frame_mode:
-                    smoothed_pts_1, smoothed_pts_2 = None, None
+                    smoothed_pts_1, smoothed_pts_2, smoothed_pts_3 = None, None, None
                     hand_lm = results.multi_hand_landmarks[0]
                     cx = (int(hand_lm.landmark[4].x * w) + int(hand_lm.landmark[8].x * w)) // 2
                     cy = (int(hand_lm.landmark[4].y * h) + int(hand_lm.landmark[8].y * h)) // 2
@@ -475,7 +516,7 @@ def main():
                         img[y1:y2, x1:x2] = np.where(mask3 == 255, filtered_roi, roi)
                         cv2.circle(img, (cx, cy), radius, C_PORTAL_B, 2, cv2.LINE_AA)
                 else:
-                    smoothed_pts_1, smoothed_pts_2 = None, None
+                    smoothed_pts_1, smoothed_pts_2, smoothed_pts_3 = None, None, None
 
             elif full_frame_mode:
                 img = apply_filter(img, filter_name, 0, 0, None, frame_galaxy)
