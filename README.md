@@ -7,9 +7,9 @@ A real-time Computer Vision application built with **OpenCV** and **Google Media
 ## 🌟 Key Features
 
 - **11 Retro Filters**: `MONO`, `DUAL-TONE`, `PIXELATE`, `INVERT`, `SEPIA`, `BLUR`, `THERMAL`, `SKETCH`, `GLITCH`, `NEON`, `GALAXY`
-- **Foldable 4-Point Portal**: Form mid-air portals using your hands (Thumb & Index) with deterministic hand mapping and smooth EMA vertex interpolation.
-- **Dual-Portal Layering**: Form 2 independent filter portals simultaneously (Portal 1: Thumb+Index, Portal 2: Index+Middle).
-- **3D Volumetric & Chromatic Effect**: Overlapping portals form a 3D wireframe prism with 3D RGB-shift (Chromatic Aberration) holographic blending.
+- **Foldable 4-Point Portal**: Form mid-air portals using your hands with deterministic hand mapping and smooth EMA vertex interpolation.
+- **Triple-Portal 3D System**: Form 3 independent filter portals simultaneously (Portal 1: Thumb+Index, Portal 2: Index+Middle, Portal 3: Thumb+Middle).
+- **Full 3D Volumetric Mesh**: All 3 portals are connected in real-time by a 3D wireframe depth mesh, creating a complete floating 3D volumetric prism in mid-air with 3D RGB-shift (Chromatic Aberration) holographic blending.
 - **Gesture Control**: Touch thumb to pinky or touch index fingertips to switch filters instantly.
 - **Clean Instagram-Style UI**: Minimalist bottom filter carousel, sharp HD text, locked 30 FPS playback.
 
